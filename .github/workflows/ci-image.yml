@@ -4,7 +4,7 @@ on:
   push:
     branches: [master]
     paths:
-      - '.github/Dockerfile'
+      - 'dist/docker/Dockerfile'
       - '.github/workflows/ci-image.yml'
       - 'server/Makefile.PL'
       - 'client/Makefile.PL'
@@ -20,6 +20,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Compute image tag
+        id: meta
+        run: echo "tag=ghcr.io/${GITHUB_REPOSITORY,,}/ci:latest" >> "$GITHUB_OUTPUT"
+
       - uses: docker/setup-buildx-action@v4
 
       - uses: docker/login-action@v3
@@ -31,8 +35,9 @@ jobs:
       - uses: docker/build-push-action@v7
         with:
           context: .
-          file: .github/Dockerfile
+          file: dist/docker/Dockerfile
+          target: base
           push: true
-          tags: ghcr.io/${{ github.repository }}/ci:latest
+          tags: ${{ steps.meta.outputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

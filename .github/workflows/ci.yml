@@ -5,7 +5,6 @@ on:
     types: [opened, synchronize, reopened]
     paths:
       - '.github/workflows/ci.yml'
-      - '.github/Dockerfile'
       - '.test/**'
       - 'client/**'
       - 'server/**'
@@ -17,10 +16,19 @@ permissions:
   packages: read
 
 jobs:
+  image-name:
+    runs-on: ubuntu-24.04
+    outputs:
+      ci: ${{ steps.set.outputs.ci }}
+    steps:
+      - id: set
+        run: echo "ci=ghcr.io/${GITHUB_REPOSITORY,,}/ci:latest" >> "$GITHUB_OUTPUT"
+
   test:
+    needs: image-name
     runs-on: ubuntu-24.04
     container:
-      image: ghcr.io/${{ github.repository }}/ci:latest
+      image: ${{ needs.image-name.outputs.ci }}
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
