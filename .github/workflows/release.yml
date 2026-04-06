@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g., 2.41)'
+        description: 'Release version (e.g., 2.41 or 2.41.1)'
         required: true
         type: string
 
@@ -13,22 +13,50 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
+      - name: Validate version format
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "::error::Invalid version format '$VERSION'. Expected X.Y or X.Y.Z (e.g., 2.41 or 2.41.1)"
+            exit 1
+          fi
+
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+
+      - name: Extract current version and validate
+        id: current
+        run: |
+          CURRENT=$(perl -ne "print \$1 if /\\bVERSION\\s*=\\s*'([^']+)'/" server/lib/NicToolServer.pm)
+          if [ -z "$CURRENT" ]; then
+            echo "::error::Could not extract version from server/lib/NicToolServer.pm"
+            exit 1
+          fi
+          echo "version=$CURRENT" >> "$GITHUB_OUTPUT"
+
+          NEW="${{ inputs.version }}"
+          if [ "$CURRENT" = "$NEW" ]; then
+            echo "::error::Version $NEW is already the current version"
+            exit 1
+          fi
+
+          # Verify new version is actually newer (sort -V puts oldest first)
+          OLDEST=$(printf '%s\n%s\n' "$CURRENT" "$NEW" | sort -V | head -n1)
+          if [ "$OLDEST" != "$CURRENT" ]; then
+            echo "::error::Version $NEW is older than current version $CURRENT"
+            exit 1
+          fi
+
+      - name: Run tests
+        uses: ./.github/actions/test
 
       - name: Setup Perl
         uses: shogo82148/actions-setup-perl@v1
         with:
           perl-version: '5.38'
-
-      - name: Extract current version
-        id: current
-        run: |
-          VERSION=$(perl -ne "print \$1 if /\\bVERSION\\s*=\\s*'([^']+)'/" server/lib/NicToolServer.pm)
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Bump version
         run: |
