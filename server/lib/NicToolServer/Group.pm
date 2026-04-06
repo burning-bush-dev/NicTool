@@ -594,7 +594,7 @@ NicToolServer::Group - nictool groups (aka, permission realms)
 
 =head1 VERSION
 
-version 2.40
+version 2.41.6
 
 =head1 SYNOPSIS
 

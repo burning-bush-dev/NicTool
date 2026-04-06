@@ -183,7 +183,7 @@ NicToolServer::Nameserver::Sanity - sanity tests for nameservers
 
 =head1 VERSION
 
-version 2.40
+version 2.41.6
 
 =head1 SYNOPSIS
 
