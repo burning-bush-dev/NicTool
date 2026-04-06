@@ -59,7 +59,7 @@ NicToolServer::Response - RPC::XML responces with mod_perl
 
 =head1 VERSION
 
-version 2.43
+version 2.40
 
 =head1 SYNOPSIS
 
