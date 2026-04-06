@@ -178,12 +178,6 @@ jobs:
 
       - name: Build distributions
         run: |
-          cd "$GITHUB_WORKSPACE/client"
-          perl Makefile.PL && make && make dist
-
-          cd "$GITHUB_WORKSPACE/server"
-          perl Makefile.PL && make && make dist
-
           cd "$GITHUB_WORKSPACE/server/api"
           perl Makefile.PL && make && make dist
 
