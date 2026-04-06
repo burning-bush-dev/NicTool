@@ -216,7 +216,7 @@ jobs:
         id: meta
         run: |
           REPO="${GITHUB_REPOSITORY,,}"
-          echo "tags=ghcr.io/${REPO}:${{ inputs.version }},ghcr.io/${REPO}:latest" >> "$GITHUB_OUTPUT"
+          echo "tags=ghcr.io/${REPO}/web:${{ inputs.version }},ghcr.io/${REPO}/web:latest" >> "$GITHUB_OUTPUT"
 
       - uses: docker/build-push-action@v7
         with:
