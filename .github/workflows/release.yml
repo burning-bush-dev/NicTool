@@ -24,8 +24,17 @@ jobs:
             exit 1
           fi
 
+      - name: Check tag does not already exist
+        run: |
+          if git ls-remote --tags origin "refs/tags/v${{ inputs.version }}" | grep -q .; then
+            echo "::error::Tag v${{ inputs.version }} already exists on the remote. Delete it first or choose a different version."
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-tags: true
 
       - name: Extract current version and validate
         id: current
