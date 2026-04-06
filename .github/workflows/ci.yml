@@ -61,7 +61,6 @@ jobs:
           echo "ROOT_USER_EMAIL=ci@nictool.test" >> "$GITHUB_ENV"
           echo "ROOT_USER_PASSWORD=$ROOT_PW" >> "$GITHUB_ENV"
           echo "NICTOOL_CLIENT_DIR=$GITHUB_WORKSPACE/client" >> "$GITHUB_ENV"
-          echo "DB_SSL=1" >> "$GITHUB_ENV"
 
       - name: Install NicTool client and server
         run: |

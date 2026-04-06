@@ -10,7 +10,7 @@ on:
 
 permissions:
   contents: write
-  packages: read
+  packages: write
 
 jobs:
   preflight:
@@ -102,7 +102,6 @@ jobs:
           echo "ROOT_USER_EMAIL=ci@nictool.test" >> "$GITHUB_ENV"
           echo "ROOT_USER_PASSWORD=$ROOT_PW" >> "$GITHUB_ENV"
           echo "NICTOOL_CLIENT_DIR=$GITHUB_WORKSPACE/client" >> "$GITHUB_ENV"
-          echo "DB_SSL=1" >> "$GITHUB_ENV"
 
       - name: Install NicTool client and server
         run: |
@@ -202,3 +201,34 @@ jobs:
             client/NicToolClient-*.tar.gz
             server/NicToolServer-*.tar.gz
             server/api/NicTool-*.tar.gz
+
+  docker:
+    needs: release
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: v${{ inputs.version }}
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: meta
+        run: |
+          REPO="${GITHUB_REPOSITORY,,}"
+          echo "tags=ghcr.io/${REPO}:${{ inputs.version }},ghcr.io/${REPO}:latest" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: dist/docker/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
