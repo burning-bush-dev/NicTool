@@ -72,11 +72,25 @@ jobs:
           git tag "v${{ inputs.version }}"
           git push origin HEAD --tags
 
+      - name: Clean build artifacts from test run
+        run: |
+          # Tests run with sudo, leaving root-owned blib/ dirs that block make
+          for dir in client server server/api .; do
+            sudo rm -rf "$dir/blib" "$dir/Makefile" "$dir/MYMETA.*" "$dir/pm_to_blib"
+          done
+
       - name: Build distributions
         run: |
-          cd client && perl Makefile.PL && make && make dist && cd ..
-          cd server && perl Makefile.PL && make && make dist && cd ..
-          cd server/api && perl Makefile.PL && make && make dist && cd ../..
+          cd "$GITHUB_WORKSPACE/client"
+          perl Makefile.PL && make && make dist
+
+          cd "$GITHUB_WORKSPACE/server"
+          perl Makefile.PL && make && make dist
+
+          cd "$GITHUB_WORKSPACE/server/api"
+          perl Makefile.PL && make && make dist
+
+          cd "$GITHUB_WORKSPACE"
           perl Makefile.PL && make bundle
 
       - name: Create GitHub Release
