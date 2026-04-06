@@ -5,7 +5,7 @@ on:
     types: [opened, synchronize, reopened]
     paths:
       - '.github/workflows/ci.yml'
-      - '.github/actions/test/**'
+      - '.github/Dockerfile'
       - '.test/**'
       - 'client/**'
       - 'server/**'
@@ -14,11 +14,88 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   test:
     runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/${{ github.repository }}/ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: nictool
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
 
     steps:
       - uses: actions/checkout@v6
-      - uses: ./.github/actions/test
+
+      - name: Generate test credentials
+        run: |
+          DB_PW=$(openssl rand -base64 24)
+          ROOT_PW=$(openssl rand -base64 24)
+          echo "NICTOOL_DB_USER_PASSWORD=$DB_PW" >> "$GITHUB_ENV"
+          echo "DB_ROOT_PASSWORD=root" >> "$GITHUB_ENV"
+          echo "NICTOOL_DB_USER=nictool" >> "$GITHUB_ENV"
+          echo "NICTOOL_DB_NAME=nictool" >> "$GITHUB_ENV"
+          echo "DB_ENGINE=mysql" >> "$GITHUB_ENV"
+          echo "DB_HOSTNAME=mysql" >> "$GITHUB_ENV"
+          echo "ROOT_USER_EMAIL=ci@nictool.test" >> "$GITHUB_ENV"
+          echo "ROOT_USER_PASSWORD=$ROOT_PW" >> "$GITHUB_ENV"
+          echo "NICTOOL_CLIENT_DIR=$GITHUB_WORKSPACE/client" >> "$GITHUB_ENV"
+          echo "DB_SSL=1" >> "$GITHUB_ENV"
+
+      - name: Install NicTool client and server
+        run: |
+          cd "$GITHUB_WORKSPACE/client"
+          perl Makefile.PL
+          cpanm -n .
+
+          cd "$GITHUB_WORKSPACE/server"
+          perl Makefile.PL
+          cpanm -n .
+
+      - name: Allow Apache to traverse workspace path
+        run: |
+          dir="$GITHUB_WORKSPACE"
+          while [ "$dir" != "/" ]; do
+            chmod o+x "$dir"
+            dir="$(dirname "$dir")"
+          done
+
+      - name: Set up NicTool configs, Apache, and TLS
+        run: dist/setup/install-nictool.sh --nt-dir="$GITHUB_WORKSPACE"
+
+      - name: Start Apache
+        run: apachectl start
+
+      - name: Create NicTool test database
+        run: |
+          cd "$GITHUB_WORKSPACE/server/sql"
+          echo "" | perl create_tables.pl --environment
+
+      - name: Create test user and test.cfg
+        run: perl dist/setup/setup-test-env.pl
+
+      - name: Run client tests
+        run: make -C "$GITHUB_WORKSPACE/client" test
+
+      - name: Run server tests
+        run: make -C "$GITHUB_WORKSPACE/server" test
+
+      - name: Failure diagnostics
+        if: failure()
+        run: |
+          mysql --version
+          apache2 -version
+          cat /var/log/apache2/error.log || true
