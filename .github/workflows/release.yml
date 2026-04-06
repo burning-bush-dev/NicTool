@@ -27,7 +27,7 @@ jobs:
       - name: Extract current version
         id: current
         run: |
-          VERSION=$(perl -ne 'print $1 if /our\s+\$VERSION\s*=\s*'\''([^'\'']+)'\''/' server/lib/NicToolServer.pm)
+          VERSION=$(perl -ne "print \$1 if /\\bVERSION\\s*=\\s*'([^']+)'/" server/lib/NicToolServer.pm)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Bump version
