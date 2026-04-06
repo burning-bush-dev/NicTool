@@ -1,0 +1,70 @@
+services:
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: nictool
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  test:
+    build:
+      context: ../..
+      dockerfile: dist/docker/Dockerfile
+      target: base
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - ../..:/workspace
+    environment:
+      DB_ENGINE: mysql
+      DB_HOSTNAME: mysql
+      NICTOOL_DB_NAME: nictool
+      NICTOOL_DB_USER: nictool
+      NICTOOL_DB_USER_PASSWORD: ci_test_pass_42
+      DB_ROOT_PASSWORD: root
+      ROOT_USER_EMAIL: ci@nictool.test
+      ROOT_USER_PASSWORD: ci_root_pass_42
+      NICTOOL_CLIENT_DIR: /workspace/client
+    working_dir: /workspace
+    entrypoint: ["bash", "-c"]
+    command:
+      - |
+        set -e
+        W=/workspace
+
+        # Install NicTool modules (deps already in base image)
+        (cd $$W/client && perl Makefile.PL && cpanm -n .)
+        (cd $$W/server && perl Makefile.PL && cpanm -n .)
+
+        # Allow Apache to traverse /workspace
+        dir=$$W
+        while [ "$$dir" != "/" ]; do
+          chmod o+x "$$dir"
+          dir=$$(dirname "$$dir")
+        done
+
+        # Set up configs, Apache, TLS
+        $$W/dist/setup/install-nictool.sh --nt-dir=$$W
+
+        # Start Apache
+        apachectl start
+
+        # Create database tables
+        (cd $$W/server/sql && echo "" | perl create_tables.pl --environment)
+
+        # Create test user + test.cfg
+        perl $$W/dist/setup/setup-test-env.pl
+
+        # Run tests
+        echo "==> Running server tests"
+        make -C $$W/server test
+
+        echo "==> Running client tests"
+        make -C $$W/client test
+
+        echo "==> All tests passed"
