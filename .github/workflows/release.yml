@@ -10,11 +10,14 @@ on:
 
 permissions:
   contents: write
+  packages: read
 
 jobs:
-  release:
+  preflight:
     runs-on: ubuntu-24.04
-
+    outputs:
+      ci-image: ${{ steps.image.outputs.ci }}
+      current-version: ${{ steps.current.outputs.version }}
     steps:
       - name: Validate version format
         run: |
@@ -52,15 +55,108 @@ jobs:
             exit 1
           fi
 
-          # Verify new version is actually newer (sort -V puts oldest first)
           OLDEST=$(printf '%s\n%s\n' "$CURRENT" "$NEW" | sort -V | head -n1)
           if [ "$OLDEST" != "$CURRENT" ]; then
             echo "::error::Version $NEW is older than current version $CURRENT"
             exit 1
           fi
 
-      - name: Run tests
-        uses: ./.github/actions/test
+      - name: Compute CI image name
+        id: image
+        run: echo "ci=ghcr.io/${GITHUB_REPOSITORY,,}/ci:latest" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    container:
+      image: ${{ needs.preflight.outputs.ci-image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: nictool
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Generate test credentials
+        run: |
+          DB_PW=$(openssl rand -base64 24)
+          ROOT_PW=$(openssl rand -base64 24)
+          echo "NICTOOL_DB_USER_PASSWORD=$DB_PW" >> "$GITHUB_ENV"
+          echo "DB_ROOT_PASSWORD=root" >> "$GITHUB_ENV"
+          echo "NICTOOL_DB_USER=nictool" >> "$GITHUB_ENV"
+          echo "NICTOOL_DB_NAME=nictool" >> "$GITHUB_ENV"
+          echo "DB_ENGINE=mysql" >> "$GITHUB_ENV"
+          echo "DB_HOSTNAME=mysql" >> "$GITHUB_ENV"
+          echo "ROOT_USER_EMAIL=ci@nictool.test" >> "$GITHUB_ENV"
+          echo "ROOT_USER_PASSWORD=$ROOT_PW" >> "$GITHUB_ENV"
+          echo "NICTOOL_CLIENT_DIR=$GITHUB_WORKSPACE/client" >> "$GITHUB_ENV"
+          echo "DB_SSL=1" >> "$GITHUB_ENV"
+
+      - name: Install NicTool client and server
+        run: |
+          cd "$GITHUB_WORKSPACE/client"
+          perl Makefile.PL
+          cpanm -n .
+
+          cd "$GITHUB_WORKSPACE/server"
+          perl Makefile.PL
+          cpanm -n .
+
+      - name: Allow Apache to traverse workspace path
+        run: |
+          dir="$GITHUB_WORKSPACE"
+          while [ "$dir" != "/" ]; do
+            chmod o+x "$dir"
+            dir="$(dirname "$dir")"
+          done
+
+      - name: Set up NicTool configs, Apache, and TLS
+        run: dist/setup/install-nictool.sh --nt-dir="$GITHUB_WORKSPACE"
+
+      - name: Start Apache
+        run: apachectl start
+
+      - name: Create NicTool test database
+        run: |
+          cd "$GITHUB_WORKSPACE/server/sql"
+          echo "" | perl create_tables.pl --environment
+
+      - name: Create test user and test.cfg
+        run: perl dist/setup/setup-test-env.pl
+
+      - name: Run client tests
+        run: make -C "$GITHUB_WORKSPACE/client" test
+
+      - name: Run server tests
+        run: make -C "$GITHUB_WORKSPACE/server" test
+
+      - name: Failure diagnostics
+        if: failure()
+        run: |
+          mysql --version
+          apache2 -version
+          cat /var/log/apache2/error.log || true
+
+  release:
+    needs: [preflight, test]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-tags: true
 
       - name: Setup Perl
         uses: shogo82148/actions-setup-perl@v1
@@ -70,7 +166,7 @@ jobs:
       - name: Bump version
         run: |
           chmod +x .release/version-bump.sh
-          .release/version-bump.sh "${{ steps.current.outputs.version }}" "${{ inputs.version }}"
+          .release/version-bump.sh "${{ needs.preflight.outputs.current-version }}" "${{ inputs.version }}"
 
       - name: Commit and tag
         run: |
@@ -80,13 +176,6 @@ jobs:
           git commit -m "release v${{ inputs.version }}"
           git tag "v${{ inputs.version }}"
           git push origin HEAD --tags
-
-      - name: Clean build artifacts from test run
-        run: |
-          # Tests run with sudo, leaving root-owned blib/ dirs that block make
-          for dir in client server server/api .; do
-            sudo rm -rf "$dir/blib" "$dir/Makefile" "$dir/MYMETA.*" "$dir/pm_to_blib"
-          done
 
       - name: Build distributions
         run: |
