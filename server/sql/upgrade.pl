@@ -119,7 +119,7 @@ sub _sql_test_2_40 {
 sub _sql_2_40 {
     <<EO_SQL_2_40;
 UPDATE nt_nameserver_export_type SET name='nsd' WHERE id=6 AND LOWER(name)='nsd';
-UPDATE nt_options SET option_value='2.40' WHERE option_name='db_version';
+UPDATE nt_options SET option_value='2.43' WHERE option_name='db_version';
 EO_SQL_2_40
 }
 
