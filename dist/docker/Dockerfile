@@ -20,6 +20,7 @@ RUN apt-get -q update && apt-get upgrade -qy && apt-get install -qy \
       bind9utils \
       default-mysql-client \
       openssl \
+      ripgrep \
       libdbix-simple-perl \
       libdbd-mysql-perl \
       libapache-dbi-perl \
